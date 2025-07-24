@@ -12,6 +12,7 @@ const PERTDiagram = ({ tasks, cmpResults, isCalculating }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [selectedNode, setSelectedNode] = useState(null);
+  const [groupedTasks, setGroupedTasks] = useState([]);
 
   // Positions optimisées pour le diagramme PERT
   const positions = {
@@ -29,6 +30,35 @@ const PERTDiagram = ({ tasks, cmpResults, isCalculating }) => {
     'K': { x: 1050, y: 250 },
     'L': { x: 1050, y: 350 }
   };
+
+  useEffect(() => {
+    // Grouper les tâches ayant les mêmes successeurs
+    const groupTasks = () => {
+      const drawnGroups = new Set();
+      const newGroupedTasks = [];
+
+      Object.keys(tasks).forEach(task => {
+        if ([...drawnGroups].flat().includes(task)) return;
+
+        const taskSucc = getSuccessors(task, tasks).sort().join(',');
+        const group = [task];
+
+        for (const other of Object.keys(tasks)) {
+          if (other === task || [...drawnGroups].flat().includes(other)) continue;
+          if (getSuccessors(other, tasks).sort().join(',') === taskSucc) {
+            group.push(other);
+          }
+        }
+
+        newGroupedTasks.push(group);
+        drawnGroups.add(group);
+      });
+
+      setGroupedTasks(newGroupedTasks);
+    };
+
+    groupTasks();
+  }, [tasks]);
 
   const handleZoomIn = () => setZoom(prev => Math.min(prev * 1.2, 3));
   const handleZoomOut = () => setZoom(prev => Math.max(prev / 1.2, 0.3));
@@ -74,6 +104,54 @@ const PERTDiagram = ({ tasks, cmpResults, isCalculating }) => {
     const isCritical = cmpResults.margins && cmpResults.margins[taskName] === 0;
     const isSelected = selectedNode === taskName;
     
+    // Pour les tâches groupées, trouver le groupe correspondant
+    const taskGroup = groupedTasks.find(group => group.includes(taskName));
+    const isGrouped = taskGroup && taskGroup.length > 1;
+    
+    // Si c'est une tâche groupée et pas la première du groupe, ne pas afficher
+    if (isGrouped && taskName !== taskGroup[0]) return null;
+
+    // Pour les tâches groupées, calculer le maxEF
+    const maxEF = isGrouped 
+      ? Math.max(...taskGroup.map(t => cmpResults.earliestFinish[t] || 0))
+      : cmpResults.earliestFinish ? cmpResults.earliestFinish[taskName] || 0 : 0;
+
+    // Contenu pour les successeurs (comme dans l'exemple)
+    let rightContentItems = [];
+    if (taskName !== 'DEB') {
+      const successors = getSuccessors(isGrouped ? taskGroup[0] : taskName, tasks);
+      const succValues = successors.map(s => ({ 
+        name: s, 
+        value: cmpResults.latestStart ? cmpResults.latestStart[s] || 0 : 0 
+      }));
+      const minValue = Math.min(...succValues.map(s => s.value));
+
+      rightContentItems = succValues.map((s, index) => {
+        const isMin = s.value === minValue;
+        return (
+          <div 
+            key={s.name}
+            className={`text-xs ${isMin ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-600 dark:text-slate-400'} ${
+              index < succValues.length - 1 ? 'border-b border-gray-300 dark:border-gray-600' : ''
+            } px-2 py-1`}
+          >
+            {s.value}
+          </div>
+        );
+      });
+    } else {
+      // Pour le nœud DEB, afficher les LS des successeurs
+      const successors = Object.keys(tasks).filter(t => tasks[t].predecessors.includes('DEB'));
+      rightContentItems = successors.map(s => (
+        <div 
+          key={s}
+          className="text-xs text-slate-600 dark:text-slate-400 px-2 py-1"
+        >
+          {cmpResults.latestStart ? cmpResults.latestStart[s] || 0 : 0}
+        </div>
+      ));
+    }
+
     return (
       <div
         key={taskName}
@@ -95,32 +173,40 @@ const PERTDiagram = ({ tasks, cmpResults, isCalculating }) => {
           {/* Left section - Early dates */}
           <div className="w-2/5 flex flex-col justify-center items-center border-r border-gray-300 dark:border-gray-600 p-1">
             <div className="text-xs font-bold text-blue-600 dark:text-blue-400">
-              {cmpResults.earliestFinish ? cmpResults.earliestFinish[taskName] || 0 : 0}
+              {maxEF}
             </div>
           </div>
           
           {/* Right section - Late dates and task info */}
-          <div className="w-3/5 flex flex-col justify-center items-center p-1">
-            <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
-              {taskName}
-            </div>
-            {cmpResults.latestStart && (
-              <div className="text-xs text-slate-600 dark:text-slate-400">
-                {cmpResults.latestStart[taskName] || 0}
-              </div>
+          <div className="w-3/5 flex flex-col justify-center items-center p-1 overflow-y-auto">
+            {taskName === 'DEB' ? (
+              <div className="text-xs font-bold text-green-600 dark:text-green-400">DÉBUT</div>
+            ) : (
+              <>
+                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
+                  {isGrouped ? taskGroup.join(', ') : taskName}
+                </div>
+                <div className="flex flex-col items-center w-full">
+                  {rightContentItems}
+                </div>
+              </>
             )}
           </div>
         </div>
         
         {/* Task label below node */}
-        <div className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 text-center">
-          <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-            {task?.name || taskName}
+        {taskName !== 'DEB' && (
+          <div className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 text-center">
+            <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+              {task?.name || (isGrouped ? taskGroup.map(t => t).join(', ') : taskName)}
+            </div>
+            <Badge variant="outline" className="text-xs mt-1 backdrop-blur-sm">
+              {isGrouped 
+                ? taskGroup.map(t => tasks[t]?.duration || 0).join(',') + 'j' 
+                : (task?.duration || 0) + 'j'}
+            </Badge>
           </div>
-          <Badge variant="outline" className="text-xs mt-1 backdrop-blur-sm">
-            {task?.duration || 0}j
-          </Badge>
-        </div>
+        )}
       </div>
     );
   };
@@ -297,20 +383,7 @@ const PERTDiagram = ({ tasks, cmpResults, isCalculating }) => {
           </svg>
 
           {/* Start node */}
-          <div
-            className="node absolute cursor-pointer transition-all duration-300 hover:scale-105 z-10"
-            style={{
-              left: `${positions.DEB.x}px`,
-              top: `${positions.DEB.y}px`,
-              transform: `translate(-50%, -50%)`,
-            }}
-          >
-            <div className="w-16 h-16 rounded-full border-2 border-green-500 bg-green-50 dark:bg-green-900/20 shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center">
-              <div className="text-sm font-bold text-green-600 dark:text-green-400">
-                DÉBUT
-              </div>
-            </div>
-          </div>
+          {createNode('DEB', {}, positions['DEB'])}
 
           {/* Task nodes */}
           {Object.entries(tasks).map(([taskName, task]) => {
