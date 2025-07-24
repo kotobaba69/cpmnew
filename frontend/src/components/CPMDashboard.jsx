@@ -34,7 +34,7 @@ const CPMDashboard = () => {
     
     try {
       const results = calculateCPM(tasks);
-      setCmpResults(results);
+      setCpmResults(results);
       
       toast({
         title: "Calcul CPM terminé ✨",
