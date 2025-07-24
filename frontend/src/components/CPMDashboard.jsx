@@ -17,7 +17,7 @@ const CPMDashboard = () => {
   const { theme, toggleTheme } = useTheme();
   const { toast } = useToast();
   const [tasks, setTasks] = useState(initialTasks);
-  const [cpmResults, setCpmResults] = useState({});
+  const [cmpResults, setCmpResults] = useState({});
   const [currentProject, setCurrentProject] = useState("Nouveau Projet");
   const [isCalculating, setIsCalculating] = useState(false);
   const [showProjectManager, setShowProjectManager] = useState(false);
