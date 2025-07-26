@@ -14,51 +14,31 @@ const PERTDiagram = ({ tasks, cmpResults, isCalculating }) => {
   const [selectedNode, setSelectedNode] = useState(null);
   const [groupedTasks, setGroupedTasks] = useState([]);
 
-  // Positions optimisées pour le diagramme PERT
+  // Positions optimisées pour le diagramme CPM style classique
   const positions = {
-    'DEB': { x: 80, y: 300 },
-    'A': { x: 250, y: 150 },
-    'B': { x: 250, y: 450 },
-    'C': { x: 450, y: 80 },
-    'D': { x: 450, y: 180 },
-    'E': { x: 450, y: 280 },
-    'F': { x: 450, y: 520 },
-    'G': { x: 650, y: 130 },
-    'H': { x: 850, y: 300 },
-    'I': { x: 650, y: 80 },
-    'J': { x: 650, y: 230 },
-    'K': { x: 1050, y: 250 },
-    'L': { x: 1050, y: 350 }
+    'DEB': { x: 100, y: 300 },
+    'A': { x: 300, y: 200 },
+    'B': { x: 300, y: 400 },
+    'C': { x: 500, y: 120 },
+    'D': { x: 500, y: 220 },
+    'E': { x: 500, y: 320 },
+    'F': { x: 500, y: 480 },
+    'G': { x: 700, y: 170 },
+    'H': { x: 900, y: 300 },
+    'I': { x: 700, y: 270 },
+    'J': { x: 700, y: 370 },
+    'K': { x: 1100, y: 250 },
+    'L': { x: 1100, y: 350 },
+    'FIN': { x: 1300, y: 300 }
   };
 
-  useEffect(() => {
-    // Grouper les tâches ayant les mêmes successeurs
-    const groupTasks = () => {
-      const drawnGroups = new Set();
-      const newGroupedTasks = [];
-
-      Object.keys(tasks).forEach(task => {
-        if ([...drawnGroups].flat().includes(task)) return;
-
-        const taskSucc = getSuccessors(task, tasks).sort().join(',');
-        const group = [task];
-
-        for (const other of Object.keys(tasks)) {
-          if (other === task || [...drawnGroups].flat().includes(other)) continue;
-          if (getSuccessors(other, tasks).sort().join(',') === taskSucc) {
-            group.push(other);
-          }
-        }
-
-        newGroupedTasks.push(group);
-        drawnGroups.add(group);
-      });
-
-      setGroupedTasks(newGroupedTasks);
-    };
-
-    groupTasks();
-  }, [tasks]);
+  // Calculer le chemin critique pour l'affichage
+  const criticalTasks = cmpResults.criticalPath || [];
+  
+  // Fonction pour vérifier si une arête fait partie du chemin critique
+  const isCriticalEdge = (from, to) => {
+    return criticalTasks.includes(from) && criticalTasks.includes(to);
+  };
 
   const handleZoomIn = () => setZoom(prev => Math.min(prev * 1.2, 3));
   const handleZoomOut = () => setZoom(prev => Math.max(prev / 1.2, 0.3));
@@ -104,52 +84,57 @@ const PERTDiagram = ({ tasks, cmpResults, isCalculating }) => {
     const isCritical = cmpResults.margins && cmpResults.margins[taskName] === 0;
     const isSelected = selectedNode === taskName;
     
-    // Pour les tâches groupées, trouver le groupe correspondant
-    const taskGroup = groupedTasks.find(group => group.includes(taskName));
-    const isGrouped = taskGroup && taskGroup.length > 1;
+    // Valeurs pour l'affichage (style diagramme CPM classique)
+    const earliestStart = cmpResults.earliestStart ? cmpResults.earliestStart[taskName] || 0 : 0;
+    const latestStart = cmpResults.latestStart ? cmpResults.latestStart[taskName] || 0 : 0;
     
-    // Si c'est une tâche groupée et pas la première du groupe, ne pas afficher
-    if (isGrouped && taskName !== taskGroup[0]) return null;
-
-    // Pour les tâches groupées, calculer le maxEF
-    const maxEF = isGrouped 
-      ? Math.max(...taskGroup.map(t => cmpResults.earliestFinish[t] || 0))
-      : cmpResults.earliestFinish ? cmpResults.earliestFinish[taskName] || 0 : 0;
-
-    // Contenu pour les successeurs (comme dans l'exemple)
-    let rightContentItems = [];
-    if (taskName !== 'DEB') {
-      const successors = getSuccessors(isGrouped ? taskGroup[0] : taskName, tasks);
-      const succValues = successors.map(s => ({ 
-        name: s, 
-        value: cmpResults.latestStart ? cmpResults.latestStart[s] || 0 : 0 
-      }));
-      const minValue = Math.min(...succValues.map(s => s.value));
-
-      rightContentItems = succValues.map((s, index) => {
-        const isMin = s.value === minValue;
-        return (
-          <div 
-            key={s.name}
-            className={`text-xs ${isMin ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-600 dark:text-slate-400'} ${
-              index < succValues.length - 1 ? 'border-b border-gray-300 dark:border-gray-600' : ''
-            } px-2 py-1`}
-          >
-            {s.value}
-          </div>
-        );
-      });
-    } else {
-      // Pour le nœud DEB, afficher les LS des successeurs
-      const successors = Object.keys(tasks).filter(t => tasks[t].predecessors.includes('DEB'));
-      rightContentItems = successors.map(s => (
-        <div 
-          key={s}
-          className="text-xs text-slate-600 dark:text-slate-400 px-2 py-1"
+    // Gestion des nœuds spéciaux
+    if (taskName === 'DEB') {
+      return (
+        <div
+          key={taskName}
+          className={`node absolute cursor-pointer transition-all duration-300 ${
+            isSelected ? 'scale-110 z-20' : 'hover:scale-105 z-10'
+          }`}
+          style={{
+            left: `${pos.x}px`,
+            top: `${pos.y}px`,
+            transform: `translate(-50%, -50%)`,
+          }}
+          onClick={() => setSelectedNode(isSelected ? null : taskName)}
         >
-          {cmpResults.latestStart ? cmpResults.latestStart[s] || 0 : 0}
+          <div className="w-20 h-20 rounded-full border-4 border-gray-800 bg-white shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center">
+            <div className="text-sm font-bold text-gray-800 text-center">
+              0
+            </div>
+          </div>
         </div>
-      ));
+      );
+    }
+    
+    // Nœud FIN (si pas de successeurs)
+    const successors = getSuccessors(taskName, tasks);
+    if (taskName === 'FIN' || (successors.length === 0 && taskName !== 'DEB')) {
+      return (
+        <div
+          key="FIN"
+          className={`node absolute cursor-pointer transition-all duration-300 ${
+            isSelected ? 'scale-110 z-20' : 'hover:scale-105 z-10'
+          }`}
+          style={{
+            left: `${positions.FIN?.x || pos.x}px`,
+            top: `${positions.FIN?.y || pos.y}px`,
+            transform: `translate(-50%, -50%)`,
+          }}
+          onClick={() => setSelectedNode(isSelected ? null : 'FIN')}
+        >
+          <div className="w-20 h-20 rounded-full border-4 border-gray-800 bg-white shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center">
+            <div className="text-sm font-bold text-gray-800 text-center">
+              {cmpResults.totalDuration || 0}
+            </div>
+          </div>
+        </div>
+      );
     }
 
     return (
@@ -165,48 +150,33 @@ const PERTDiagram = ({ tasks, cmpResults, isCalculating }) => {
         }}
         onClick={() => setSelectedNode(isSelected ? null : taskName)}
       >
+        {/* Nœud circulaire style CPM classique */}
         <div
-          className={`w-24 h-16 rounded-full border-2 bg-white dark:bg-slate-800 shadow-lg hover:shadow-xl transition-all duration-300 flex ${
-            isCritical ? 'border-red-500 bg-red-50 dark:bg-red-900/20' : 'border-blue-400 hover:border-blue-500'
+          className={`w-24 h-24 rounded-full border-4 bg-white shadow-lg hover:shadow-xl transition-all duration-300 flex ${
+            isCritical ? 'border-red-600' : 'border-gray-800'
           } ${isSelected ? 'ring-4 ring-blue-300 ring-opacity-50' : ''}`}
         >
-          {/* Left section - Early dates */}
-          <div className="w-2/5 flex flex-col justify-center items-center border-r border-gray-300 dark:border-gray-600 p-1">
-            <div className="text-xs font-bold text-blue-600 dark:text-blue-400">
-              {maxEF}
+          {/* Partie gauche - ES (rouge) */}
+          <div className="w-1/2 h-full flex items-center justify-center border-r-2 border-gray-800 rounded-l-full">
+            <div className="text-lg font-bold text-red-600">
+              {earliestStart}
             </div>
           </div>
           
-          {/* Right section - Late dates and task info */}
-          <div className="w-3/5 flex flex-col justify-center items-center p-1 overflow-y-auto">
-            {taskName === 'DEB' ? (
-              <div className="text-xs font-bold text-green-600 dark:text-green-400">DÉBUT</div>
-            ) : (
-              <>
-                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
-                  {isGrouped ? taskGroup.join(', ') : taskName}
-                </div>
-                <div className="flex flex-col items-center w-full">
-                  {rightContentItems}
-                </div>
-              </>
-            )}
+          {/* Partie droite - LS (bleu) */}
+          <div className="w-1/2 h-full flex items-center justify-center rounded-r-full">
+            <div className="text-lg font-bold text-blue-600">
+              {latestStart}
+            </div>
           </div>
         </div>
         
-        {/* Task label below node */}
-        {taskName !== 'DEB' && (
-          <div className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 text-center">
-            <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-              {task?.name || (isGrouped ? taskGroup.map(t => t).join(', ') : taskName)}
-            </div>
-            <Badge variant="outline" className="text-xs mt-1 backdrop-blur-sm">
-              {isGrouped 
-                ? taskGroup.map(t => tasks[t]?.duration || 0).join(',') + 'j' 
-                : (task?.duration || 0) + 'j'}
-            </Badge>
+        {/* Étiquette de la tâche sous le nœud */}
+        <div className="absolute top-full mt-3 left-1/2 transform -translate-x-1/2 text-center">
+          <div className="text-xs text-gray-600 max-w-20 break-words">
+            {task?.name}
           </div>
-        )}
+        </div>
       </div>
     );
   };
@@ -219,13 +189,15 @@ const PERTDiagram = ({ tasks, cmpResults, isCalculating }) => {
 
     const dx = toPos.x - fromPos.x;
     const dy = toPos.y - fromPos.y;
-    const length = Math.sqrt(dx * dx + dy * dy) - 96; // Account for node sizes
+    const length = Math.sqrt(dx * dx + dy * dy) - 80; // Account for node sizes (20px radius * 2 + margin)
     const angle = Math.atan2(dy, dx);
     
-    const startX = fromPos.x + 48 * Math.cos(angle);
-    const startY = fromPos.y + 32 * Math.sin(angle);
+    const startX = fromPos.x + 48 * Math.cos(angle); // 48px = radius du nœud (24px * 2)
+    const startY = fromPos.y + 48 * Math.sin(angle);
     
     const isCritical = cmpResults.margins && cmpResults.margins[taskName] === 0;
+    const isFromCritical = cmpResults.margins && cmpResults.margins[from] === 0;
+    const isCriticalPath = isCritical && isFromCritical;
 
     return (
       <g key={`arrow-${from}-${to}-${taskName}`}>
@@ -235,44 +207,44 @@ const PERTDiagram = ({ tasks, cmpResults, isCalculating }) => {
           y1={startY}
           x2={startX + length * Math.cos(angle)}
           y2={startY + length * Math.sin(angle)}
-          stroke={isCritical ? "#ef4444" : "#64748b"}
-          strokeWidth={isCritical ? "3" : "2"}
+          stroke={isCriticalPath ? "#dc2626" : "#374151"}
+          strokeWidth={isCriticalPath ? "4" : "2"}
           className="transition-all duration-300"
         />
         
         {/* Arrow head */}
         <polygon
           points={`${startX + length * Math.cos(angle)},${startY + length * Math.sin(angle)} ${
-            startX + (length - 8) * Math.cos(angle) - 4 * Math.sin(angle)
-          },${startY + (length - 8) * Math.sin(angle) + 4 * Math.cos(angle)} ${
-            startX + (length - 8) * Math.cos(angle) + 4 * Math.sin(angle)
-          },${startY + (length - 8) * Math.sin(angle) - 4 * Math.cos(angle)}`}
-          fill={isCritical ? "#ef4444" : "#64748b"}
+            startX + (length - 10) * Math.cos(angle) - 5 * Math.sin(angle)
+          },${startY + (length - 10) * Math.sin(angle) + 5 * Math.cos(angle)} ${
+            startX + (length - 10) * Math.cos(angle) + 5 * Math.sin(angle)
+          },${startY + (length - 10) * Math.sin(angle) - 5 * Math.cos(angle)}`}
+          fill={isCriticalPath ? "#dc2626" : "#374151"}
           className="transition-all duration-300"
         />
         
-        {/* Arrow label */}
+        {/* Task letter above the arrow */}
         <text
-          x={startX + (length * 0.5) * Math.cos(angle)}
-          y={startY + (length * 0.5) * Math.sin(angle)}
+          x={startX + (length * 0.4) * Math.cos(angle)}
+          y={startY + (length * 0.4) * Math.sin(angle) - 10}
           textAnchor="middle"
           dominantBaseline="middle"
-          className="text-xs fill-slate-700 dark:fill-slate-300 font-semibold"
-          transform={`rotate(${angle * 180 / Math.PI}, ${startX + (length * 0.5) * Math.cos(angle)}, ${startY + (length * 0.5) * Math.sin(angle)})`}
+          className={`text-lg font-bold ${
+            isCriticalPath ? 'fill-red-600' : 'fill-gray-800'
+          }`}
         >
-          <tspan
-            x={startX + (length * 0.5) * Math.cos(angle)}
-            y={startY + (length * 0.5) * Math.sin(angle) - 8}
-          >
-            {taskName}
-          </tspan>
-          <tspan
-            x={startX + (length * 0.5) * Math.cos(angle)}
-            y={startY + (length * 0.5) * Math.sin(angle) + 8}
-            className="text-xs fill-slate-500"
-          >
-            ({tasks[taskName]?.duration || 0}j)
-          </tspan>
+          {taskName.toLowerCase()}
+        </text>
+        
+        {/* Duration below the arrow */}
+        <text
+          x={startX + (length * 0.6) * Math.cos(angle)}
+          y={startY + (length * 0.6) * Math.sin(angle) + 20}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          className="text-base font-bold fill-gray-800"
+        >
+          {tasks[taskName]?.duration || 0}
         </text>
       </g>
     );
@@ -287,9 +259,10 @@ const PERTDiagram = ({ tasks, cmpResults, isCalculating }) => {
     <Card className="backdrop-blur-md bg-white/60 dark:bg-slate-800/60 border-white/20 shadow-2xl">
       <CardHeader>
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <CardTitle className="flex items-center text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-            <Maximize className="h-6 w-6 mr-3 text-purple-500" />
-            Diagramme PERT Interactif
+          <CardTitle className="flex items-center text-2xl font-bold">
+            <div className="bg-yellow-400 text-black px-4 py-2 mr-4 font-bold border-2 border-black">
+              Graphe CPM
+            </div>
             {isCalculating && (
               <Badge variant="secondary" className="ml-3 animate-pulse">
                 Calcul en cours...
@@ -343,11 +316,25 @@ const PERTDiagram = ({ tasks, cmpResults, isCalculating }) => {
               <span>Cliquez et glissez pour déplacer</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded-full border-2 border-red-500 bg-red-50"></div>
-              <span>Tâches critiques</span>
+              <div className="w-6 h-4 rounded-full border-2 border-red-500 bg-white flex">
+                <div className="w-1/2 bg-red-100 rounded-l-full flex items-center justify-center">
+                  <span className="text-xs text-red-600 font-bold">ES</span>
+                </div>
+                <div className="w-1/2 bg-blue-100 rounded-r-full flex items-center justify-center">
+                  <span className="text-xs text-blue-600 font-bold">LS</span>
+                </div>
+              </div>
+              <span>Chemin critique (rouge)</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded-full border-2 border-blue-400 bg-white"></div>
+              <div className="w-6 h-4 rounded-full border-2 border-slate-400 bg-white flex">
+                <div className="w-1/2 bg-red-50 rounded-l-full flex items-center justify-center">
+                  <span className="text-xs text-red-600 font-bold">ES</span>
+                </div>
+                <div className="w-1/2 bg-blue-50 rounded-r-full flex items-center justify-center">
+                  <span className="text-xs text-blue-600 font-bold">LS</span>
+                </div>
+              </div>
               <span>Tâches non-critiques</span>
             </div>
           </div>
@@ -355,11 +342,11 @@ const PERTDiagram = ({ tasks, cmpResults, isCalculating }) => {
 
         <div
           ref={containerRef}
-          className={`relative overflow-hidden rounded-lg bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-blue-900 border border-white/20 ${
+          className={`relative overflow-hidden rounded-lg bg-gray-50 border-2 border-gray-300 ${
             isDragging ? 'cursor-grabbing' : 'cursor-grab'
           }`}
           style={{
-            height: '600px',
+            height: '700px',
             transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`,
             transformOrigin: 'center center'
           }}
@@ -380,6 +367,13 @@ const PERTDiagram = ({ tasks, cmpResults, isCalculating }) => {
                 return null;
               })
             ).flat().filter(Boolean)}
+            
+            {/* Arrow to FIN node for tasks without successors */}
+            {Object.entries(tasks)
+              .filter(([taskName]) => getSuccessors(taskName, tasks).length === 0)
+              .map(([taskName]) => 
+                createArrow(taskName, 'FIN', 'fin')
+              )}
           </svg>
 
           {/* Start node */}
@@ -391,6 +385,11 @@ const PERTDiagram = ({ tasks, cmpResults, isCalculating }) => {
             if (!pos) return null;
             return createNode(taskName, task, pos);
           })}
+          
+          {/* End node for tasks without successors */}
+          {Object.keys(tasks).some(taskName => getSuccessors(taskName, tasks).length === 0) &&
+            createNode('FIN', {}, positions.FIN || { x: 1300, y: 300 })
+          }
 
           {/* Loading overlay */}
           {isCalculating && (
