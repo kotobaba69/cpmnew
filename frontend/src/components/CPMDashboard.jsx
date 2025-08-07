@@ -5,12 +5,14 @@ import { Badge } from "./ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Moon, Sun, Download, Save, FolderOpen, Calculator, RotateCcw } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
-import TaskForm from "./TaskForm";
-import TaskTable from "./TaskTable";
-import PERTDiagram from "./PERTDiagram";
+import TaskFormEnhanced from "./TaskFormEnhanced";
+import TaskTableEnhanced from "./TaskTableEnhanced";
+import CPMGraph from "./CPMGraph";
+import ProjectStats from "./ProjectStats";
 import ProjectManager from "./ProjectManager";
 import { initialTasks } from "../data/mockData";
 import { calculateCPM } from "../utils/cpmCalculations";
+import { exportToCSV, downloadFile } from "../lib/graph-utils";
 import { useToast } from "../hooks/use-toast";
 
 const CPMDashboard = () => {
@@ -21,6 +23,7 @@ const CPMDashboard = () => {
   const [currentProject, setCurrentProject] = useState("Nouveau Projet");
   const [isCalculating, setIsCalculating] = useState(false);
   const [showProjectManager, setShowProjectManager] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
 
   useEffect(() => {
     calculateAndDisplayCPM();
@@ -96,6 +99,7 @@ const CPMDashboard = () => {
     });
     
     setTasks(newTasks);
+    setEditingTask(null); // Clear editing state if deleting the task being edited
     
     toast({
       title: "Tâche supprimée",
@@ -116,17 +120,20 @@ const CPMDashboard = () => {
   };
 
   const exportDiagram = () => {
-    toast({
-      title: "Export en cours...",
-      description: "Le diagramme PERT sera téléchargé sous peu.",
-    });
-    // Mock export functionality
-    setTimeout(() => {
+    try {
+      const csvContent = exportToCSV(tasks, cmpResults);
+      downloadFile(csvContent, `${currentProject.replace(/\s+/g, '_')}_cpm_analysis.csv`, 'text/csv');
       toast({
         title: "Export réussi ✅",
-        description: "Le diagramme a été exporté en PNG.",
+        description: "L'analyse CPM a été exportée en CSV.",
       });
-    }, 2000);
+    } catch (error) {
+      toast({
+        title: "Erreur d'export",
+        description: "Une erreur est survenue lors de l'export.",
+        variant: "destructive",
+      });
+    }
   };
 
   const saveProject = () => {
@@ -259,67 +266,68 @@ const CPMDashboard = () => {
             Gestion des tâches
           </TabsTrigger>
           <TabsTrigger value="diagram" className="data-[state=active]:bg-white/80 dark:data-[state=active]:bg-slate-700/80">
-            Diagramme PERT
+            Graphe CPM
           </TabsTrigger>
           <TabsTrigger value="analysis" className="data-[state=active]:bg-white/80 dark:data-[state=active]:bg-slate-700/80">
-            Analyse
+            Statistiques
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <TaskForm
-              onAddTask={handleAddTask}
-              existingTasks={tasks}
-              isCalculating={isCalculating}
-            />
-            <TaskTable
+            <div className="space-y-6">
+              <TaskFormEnhanced
+                tasks={tasks}
+                onAddTask={handleAddTask}
+                onUpdateTask={handleUpdateTask}
+                editingTask={editingTask}
+                onCancelEdit={() => setEditingTask(null)}
+                isCalculating={isCalculating}
+              />
+              <ProjectStats
+                tasks={tasks}
+                cmpResults={cmpResults}
+                isCalculating={isCalculating}
+              />
+            </div>
+            <TaskTableEnhanced
               tasks={tasks}
               cmpResults={cmpResults}
               onUpdateTask={handleUpdateTask}
               onDeleteTask={handleDeleteTask}
-              onReorderTasks={handleReorderTasks}
+              onEditTask={(taskId) => setEditingTask({ id: taskId, data: tasks[taskId] })}
+              isCalculating={isCalculating}
             />
           </div>
         </TabsContent>
 
         <TabsContent value="tasks">
-          <TaskTable
+          <TaskTableEnhanced
             tasks={tasks}
             cmpResults={cmpResults}
             onUpdateTask={handleUpdateTask}
             onDeleteTask={handleDeleteTask}
-            onReorderTasks={handleReorderTasks}
+            onEditTask={(taskId) => setEditingTask({ id: taskId, data: tasks[taskId] })}
             fullView={true}
-          />
-        </TabsContent>
-
-        <TabsContent value="diagram">
-          <PERTDiagram
-            tasks={tasks}
-            cmpResults={cmpResults}
             isCalculating={isCalculating}
           />
         </TabsContent>
 
+        <TabsContent value="diagram">
+          <CPMGraph
+            tasks={tasks}
+            cmpResults={cmpResults}
+            isCalculating={isCalculating}
+            onEditTask={(taskId) => setEditingTask({ id: taskId, data: tasks[taskId] })}
+          />
+        </TabsContent>
+
         <TabsContent value="analysis">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {/* Analysis cards would go here */}
-            <Card className="backdrop-blur-md bg-white/60 dark:bg-slate-800/60 border-white/20">
-              <CardHeader>
-                <CardTitle>Chemin Critique</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {cmpResults.criticalPath?.map(task => (
-                    <Badge key={task} variant="destructive" className="mr-2">
-                      {task}
-                    </Badge>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <ProjectStats
+            tasks={tasks}
+            cmpResults={cmpResults}
+            isCalculating={isCalculating}
+          />
         </TabsContent>
       </Tabs>
 
