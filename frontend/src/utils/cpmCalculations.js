@@ -1,4 +1,24 @@
+// This file integrates the enhanced CPM algorithm
+// The new enhanced algorithm is in /lib/cmp-algorithm.ts
+import { calculateCPM as enhancedCalculateCPM } from '../lib/cmp-algorithm';
+
+// Enhanced calculateCPM function that provides backward compatibility
 export const calculateCPM = (tasks) => {
+  try {
+    // Use the enhanced algorithm if available
+    if (enhancedCalculateCPM) {
+      return enhancedCalculateCPM(tasks);
+    }
+  } catch (error) {
+    console.warn('Enhanced algorithm failed, falling back to legacy implementation:', error);
+  }
+  
+  // Fallback to legacy implementation
+  return legacyCalculateCPM(tasks);
+};
+
+// Legacy implementation as fallback
+const legacyCalculateCPM = (tasks) => {
   // 1. Calcul des dates au plus tôt
   const earliestStart = { 'DEB': 0 };
   const earliestFinish = { 'DEB': 0 };
